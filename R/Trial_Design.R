@@ -17,13 +17,13 @@ tidx = matrix(tidx, ncol = n_treats) - 3
 f_coords <- cbind(c(0, 900), c(0, 600))
 pol <- st_as_sfc(st_bbox(st_multipoint(f_coords)))
 field <- st_sf(pol, crs = 32616)
-rst <- raster(field, res = 1)
+rst <- raster(field, res = 3)
 
-plot_sizes = c(3, 10, 30, 60)
+plot_sizes = c(3, 6, 15, 30, 60)
 
-plot_size = 60
+plot_size = 10
 for( plot_size in plot_sizes){
-  trial <- aggregate(raster(rst), plot_size)
+  trial <- aggregate(raster(rst), plot_size/3)
   trial$id <- 1:ncell(trial)
   trial$pcol = 1:ncol(trial)
   trial$rep_col = ceiling(trial$pcol/n_treats)
@@ -58,20 +58,25 @@ for( plot_size in plot_sizes){
   t50 = xor(trial$rep_col %% 2, trial$prow %% 2)
   t100 = trial$rep_col > 0
   
+  srep = disaggregate(trial$rep, plot_size/3)
+  names(srep) = paste0('size',plot_size,'_rep')
+  rst = addLayer(rst, srep)
+  
   s_pct = list('p01'=t01, 'p05'=t05, 'p10'=t10, 'p50'=t50, 'p100'=t100)
   for(s in names(s_pct)){
     streat = trial$treat
     streat[!s_pct[[s]]] = NA
-    streat = disaggregate(streat, plot_size)
+    streat = disaggregate(streat, plot_size/3)
     names(streat) = paste0('size',plot_size,'_',s)
     rst = addLayer(rst, streat)
   }
   
 }
 
-tm_shape(rst) + tm_raster(legend.show = FALSE, style = 'cat') + tm_facets(ncol = 5)
+rst_treat = rst[[grep('_p', names(rst))]]
+tm_shape(rst_treat) + tm_raster(legend.show = FALSE, style = 'cat') + tm_facets(ncol = 5)
 tmap_save(filename = 'figures/Trial_Design.png', dpi = 600, width = 9, height = 4.8, units = 'in')
 
-writeRaster(rst, 'data/Trial_Design.tif', overwrite = TRUE, datatype = 'INT1')
+saveRDS(rst, 'data/Trial_Design.rds')
 
 

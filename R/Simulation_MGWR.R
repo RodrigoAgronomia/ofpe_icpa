@@ -3,7 +3,7 @@ library(sf)
 library(raster)
 library(tibble)
 library(dplyr)
-library(GWmodel)
+library(mgwrsar)
 
 set.seed(12345)
 
@@ -51,25 +51,46 @@ plot(inp_rate)
 grdf = aggregate(stack(inp_rate, rst_yield), 10)
 names(grdf) = c('inp_rate', 'yield')
 trial = st_as_sf(rasterToPolygons(grdf))
-pred_coords = rasterToPoints(is.na(grdf), spatial = TRUE)
-gridded(pred_coords) = TRUE
-trial_sp <- st_set_geometry(trial, st_centroid(st_geometry(trial)))
-trial_sp <- as(trial_sp, "Spatial")
-pts <- coordinates(trial_sp)
-gwr.fml <- as.formula(yield~poly(inp_rate, 2))
+coords <- st_coordinates(st_centroid(st_geometry(trial)))
+
+mgwr.fml <- as.formula(yield~poly(inp_rate, 2))
 bwcv <- 20
+fx_var = c("poly(inp_rate, 2)2")
 
-gwr.model <- gwr.basic(gwr.fml, trial_sp, bw = bwcv,
-                       regression.points = pred_coords,
-                       adaptive = TRUE, kernel = "gaussian")
+mgwr.model <- MGWRSAR(mgwr.fml, trial, 
+                      coord = coords, fixed_vars = fx_var, 
+                      kernels = c("gauss_adapt"),
+                      H = bwcv, Model = "MGWR", control = list(SE = TRUE)
+)
 
 
-rst_b1_pred = stack(gwr.model$SDF)
+print(mgwr.model)
 
-
-gwr_r <- gwr.model$SDF$Intercept
-names(gwr_r) <- paste0(c('Intercept', 'inp_rate', 'inp_rate2'), "_gwr")
+gwr_r <- as_tibble(mgwr.model$Betav)
+names(gwr_r) <- paste0(c('Intercept', 'inp_rate'), "_gwr")
 trial_gwr <- bind_cols(trial, gwr_r)
+
+
+mf <- model.frame(mgwr.fml, trial)
+mt <- attr(x = mf, which = "terms")
+X <- as_tibble(model.matrix(object = mt, data = mf))
+names(X)[1] = "Intercept"
+
+Betav <- as_tibble(mgwr.model$Betav)
+Betac = rep(mgwr.model$Betac, each = nrow(mgwr.model$Betav))
+dim(Betac) = c(nrow(mgwr.model$Betav), length(mgwr.model$Betac))
+Betac = as_tibble(Betac)
+names(Betac) = names(mgwr.model$Betac)
+Betas = cbind(Betav, Betac)
+Betas = Betas[names(X)]
+
+
+iro = seq(min(trial$inp_rate), max(trial$inp_rate), length.out = 100)
+dfp = data.frame(inp_rate = iro)
+
+inp_ratep = poly(trial$inp_rate, degree = 2)
+trial$beta1 = (inp_ratep[,1] * Betas$`poly(inp_rate, 2)1`)
+
 
 
 
