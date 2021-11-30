@@ -3,47 +3,36 @@ library(sf)
 library(raster)
 library(tibble)
 library(dplyr)
-library(gstat)
 library(mgwrsar)
-library(reticulate)
-np <- import("numpy")
 
 set.seed(12345)
 
-trial <- readRDS('data/Trial_Design.rds')
+rst <- stack('data/Trial_Design.tif')
+trial <- aggregate(raster(rst), 10)
 
 
 ## ------------------------------------------------------------------------
 trial_grd <- rasterToPoints(trial, spatial = TRUE)
 gridded(trial_grd) <- TRUE
 
-
-dMat <- gw.dist(trial_grd, trial_grd)
-
-wwf = list()
-
-i = 620
-dist.vi <- dMat[, i]
-
-i = 1
-for(bw in bws){
-  rst$W.i <- gw.weight(dist.vi, bw, kernel = "gaussian", adaptive = TRUE)
-  wwf[[paste0('W', bw)]] = round(255 * rst$W.i)
-}
-wwr = stack(wwf)
-wwm = as.array(wwr)
-
-wfile = './data/weigths_zoom.npy'
-np$save(wfile, wwm)
-
-
-
-m <- vgm(psill = 1, model = "Gau", range = 100, nugget = 0.1)
-g.dummy <- gstat(formula = z ~ 1, dummy = TRUE, beta = 0, model = m, nmax = 10)
+m <- gstat::vgm(psill = 1, model = "Gau",
+                range = 100,
+                nugget = 0.5)
+g.dummy <- gstat::gstat(
+  formula = z ~ 1,
+  dummy = TRUE, beta = 0,
+  model = m, nmax = 10
+)
+# rst_sim <- predict(g.dummy, trial_grd, nsim = 200)
+# rst_sim <- scale(stack(rst_sim))
+# rst_sim <- disaggregate(rst_sim, 10)
+# rst_b0 <- rst_sim[[1:100]]
+# rst_b1 <- rst_sim[[101:200]]
 
 rst_sim <- predict(g.dummy, trial_grd, nsim = 2)
 rst_sim <- scale(stack(rst_sim))
-rst_b0 <- 10000 + 1000 * rst_sim[[1]]
+rst_sim <- disaggregate(rst_sim, 10)
+rst_b0 <- 5000 + 500 * rst_sim[[1]]
 rst_b1g <- 20
 rst_b2g <- -0.1
 rst_b1 <- rst_b1g + 3 * rst_sim[[2]]
@@ -52,25 +41,24 @@ rst_err <- 100 * rnorm(ncell(rst_sim))
 
 inp_rate = 100 + 50 * rst[[12]]
 # inp_rate[is.na(inp_rate)] = 100
-rst_yield =  rst_b0 + rst_b1 * inp_rate + rst_b2g * inp_rate**2
+rst_yield =  rst_b0 + rst_b1 * inp_rate + rst_b2g * inp_rate**2 + rst_err
 
 plot(rst_yield)
 plot(inp_rate, rst_yield)
 plot(inp_rate)
 
-# Fit a global model first to speed up.
 
-grdf = stack(inp_rate, rst_yield)
+grdf = aggregate(stack(inp_rate, rst_yield), 10)
 names(grdf) = c('inp_rate', 'yield')
-ptsdf <- rasterToPoints(grdf, spatial = TRUE)@data
-coords <- coordinates(ptsdf)
+trial = st_as_sf(rasterToPolygons(grdf))
+coords <- st_coordinates(st_centroid(st_geometry(trial)))
 
 mgwr.fml <- as.formula(yield~poly(inp_rate, 2))
 bwcv <- 20
 fx_var = c("poly(inp_rate, 2)2")
 
-mgwr.model <- MGWRSAR(mgwr.fml, ptsdf, 
-                      coord = ptsdf, fixed_vars = fx_var, 
+mgwr.model <- MGWRSAR(mgwr.fml, trial, 
+                      coord = coords, fixed_vars = fx_var, 
                       kernels = c("gauss_adapt"),
                       H = bwcv, Model = "MGWR", control = list(SE = TRUE)
 )

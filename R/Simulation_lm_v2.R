@@ -20,49 +20,54 @@ st_interpolate = function(x){
   return(x)
 }
 
-cotton_price = 1.25
+cotton_price = 0.4
 nitrogen_cost = 1.0
 nitrogen_ratio = nitrogen_cost/cotton_price
 
 set.seed(12345)
 
-trial <- readRDS('data/Trial_Design.rds')
+trial_rst <- readRDS('data/Trial_Design.rds')
 
 ## ------------------------------------------------------------------------
-trial_grd <- rasterToPoints(trial, spatial = TRUE)
+trial_grd <- rasterToPoints(trial_rst, spatial = TRUE)
 gridded(trial_grd) <- TRUE
 
 m <- vgm(psill = 1, model = "Gau", range = 100, nugget = 0.1)
 g.dummy <- gstat(formula = z ~ 1, dummy = TRUE, beta = 0, model = m, nmax = 10)
 
 sq_rate <- 100
-sq_yield <- 1000
+sq_yield <- 4500
+rst_b2g <- -0.02
 
 rst_sim <- predict(g.dummy, trial_grd, nsim = 2)
 rst_sim <- scale(stack(rst_sim))
-rst_b1g <- nitrogen_ratio
-rst_b2g <- -0.05
-rst_b1 <- rst_b1g + 2 * rst_sim[[2]]
-rst_optr = sq_rate -0.5 * (rst_b1 - nitrogen_ratio) / rst_b2g
-hist(rst_optr[])
+rst_optr <- sq_rate * (1 + 0.25 * rst_sim[[2]]) 
+rst_optr <- clamp(rst_optr, 0, 200)
 
-rst_b0 <- 1000 + 100 * rst_sim[[1]]
-rst_b0 = 1000 - 100 * rst_sim[[1]] - rst_b1 * sq_rate - rst_b2g * sq_rate**2
+rst_b1 <- -2 * rst_b2g * rst_optr + nitrogen_ratio
+rst_b0 <- sq_yield * (1 + 0.05 * rst_sim[[1]])
+rst_b0 <- rst_b0 - (rst_b1 * rst_optr + rst_b2g * rst_optr **2) 
+
 
 nrate = seq(0,200)
-ynr = rst_b1g * (nrate - sq_rate) + rst_b2g * (nrate - sq_rate)**2
-plot(ynr ~ nrate, ylim = c(-1000, 1000))
+ynr_0 = min(rst_b1[])  * nrate + rst_b2g * nrate**2
+ynr_1 = mean(rst_b1[]) * nrate + rst_b2g * nrate**2
+ynr_2 = max(rst_b1[]) * nrate + rst_b2g * nrate**2
 
-ynr0 =  min(rst_b1[]) * (nrate - sq_rate) + rst_b2g * (nrate - sq_rate)**2
-lines(ynr0 ~ nrate)
-
-ynr0 =  max(rst_b1[]) * (nrate - sq_rate) + rst_b2g * (nrate - sq_rate)**2
-lines(ynr0 ~ nrate)
+ynr_0 = sq_yield + (ynr_0 - max(ynr_0))
+ynr_1 = sq_yield + (ynr_1 - max(ynr_1))
+ynr_2 = sq_yield + (ynr_2 - max(ynr_2))
 
 
-inp_rate = sq_rate + 25 * trial$size15_p100
+plot(nrate, ylim = c(2500, 5500), type ='n')
+lines(ynr_0 ~ nrate)
+lines(ynr_1 ~ nrate)
+lines(ynr_2 ~ nrate)
 
-rst_b0 = rst_yield_ref - rst_b1 * sq_rate - rst_b2g * sq_rate**2
+
+inp_rate = sq_rate + 12.5 * trial_rst$size3_p100
+inp_rate_NA = inp_rate
+inp_rate[is.na(inp_rate)] = sq_rate
 
 rst_yield_ref =  rst_b0 + rst_b1 * sq_rate + rst_b2g * sq_rate**2
 rst_yield_obs =  rst_b0 + rst_b1 * inp_rate + rst_b2g * inp_rate**2
@@ -88,29 +93,28 @@ mean(max_net_profit[])
 mean(rst_trial_loss[])
 
 
-plot(rst_net_opt - rst_net_ref)
-plot(rst_net_opt - rst_net_obs)
-plot(rst_net_obs - rst_net_ref)
-
-  
 
 
-
-
-grdf = stack(inp_rate, rst_yield, trial$size15_rep)
+grdf = stack(inp_rate, rst_yield_obs, trial_rst$size3_rep)
 names(grdf) = c('inp_rate', 'yield', 'block')
-grdf = mask(grdf, inp_rate)
+grdf = mask(grdf, inp_rate_NA)
 grdf$block = st_interpolate(grdf$block)
 plot(grdf)
 
 
-trial = st_as_sf(rasterToPolygons(mask(grdf, inp_rate)))
+trial = st_as_sf(rasterToPolygons(mask(grdf, inp_rate_NA)))
 inp_rate_1_2 = poly(trial$inp_rate, 2)
 inp_rate_1_2 = poly(trial$inp_rate, 2, raw = TRUE)
 trial$inp_rate_1 = inp_rate_1_2[,1]
 trial$inp_rate_2 = inp_rate_1_2[,2]
 
+lm.fml = yield ~ inp_rate_1 + inp_rate_2 + block
+lm0 = lm(lm.fml, trial)
+summary(lm0)
+
+
 trial$block = as.factor(trial$block)
+
 lm.fml = yield ~ inp_rate_1 + inp_rate_2 + inp_rate_1 * block
 lm0 = lm(lm.fml, trial)
 summary(lm0)
@@ -146,12 +150,12 @@ hist(trial_pred$optr)
 
 trial_block = trial_pred %>% group_by(block) %>% summarise_all(mean)
 
-brks = seq(5000,15000,1000)
+brks = seq(2500,5000,250)
 tm_shape(rst_b0) + tm_raster(breaks = brks, legend.show = FALSE) +
   tm_shape(trial_block) + tm_polygons('b0', breaks = brks) +
   tm_layout(legend.outside=TRUE)
 
-brks = seq(5,30,5)
+brks = seq(0,20,1)
 tm_shape(rst_b1) + tm_raster(breaks = brks, legend.show = FALSE) +
   tm_shape(trial_block) + tm_polygons('b1', breaks = brks) +
   tm_layout(legend.outside=TRUE)
@@ -173,48 +177,22 @@ brks = seq(50,150,10)
 tm_shape(rst_optrp) + tm_raster(breaks = brks, legend.show = FALSE) +
   tm_shape(trial_block) + tm_polygons('optr', breaks = brks) +
   tm_layout(legend.outside=TRUE)
-# Evaluate the betas or the optimal rate? Second, plus economical aspects.
+
 
 plot(rst_optrp, rst_optr, asp = 1)
 cor(rst_optrp[], rst_optr[])
 rmse(rst_optrp[], rst_optr[])
+rmse(sq_rate, rst_optr[])
 
 
-# rst_opt_resd = (rst_optrp - rst_optr)
-# 
-# rst_yield_opt =  rst_b0 + rst_b1 * rst_optr + rst_b2g * rst_optr**2
-# rst_yield_ref =  rst_b0 + rst_b1 * 100 + rst_b2g * 100**2
-# 
-# rst_yield_cost = rst_yield_ref - rst_yield
-# 
-# rst_yield_pred = rst_b0 + rst_b1 * rst_optrp + rst_b2g * rst_optrp**2
-# 
-# 
-# rst_yield_gain = rst_yield_pred - rst_yield_ref
-# plot(rst_yield_gain)
-
-
-rst_yield_ref =  rst_b0 + rst_b1 * 100 + rst_b2g * 100**2
 rst_yield_pred = rst_b0 + rst_b1 * rst_optrp + rst_b2g * rst_optrp**2
-rst_yield_opt =  rst_b0 + rst_b1 * rst_optr + rst_b2g * rst_optr**2
-
-rst_net_ref = rst_yield_ref * cotton_price - 100 * nitrogen_cost
 rst_net_pred = rst_yield_pred * cotton_price - rst_optrp * nitrogen_cost 
-rst_net_opt = rst_yield_opt * cotton_price - rst_optr * nitrogen_cost 
 
 rst_net_pred_dif = rst_net_pred - rst_net_ref
 rst_net_opt_dif = rst_net_opt - rst_net_ref
 
 mean(rst_net_pred_dif[])
 mean(rst_net_opt_dif[])
-
-
-rst_net_rev <- rst_yield_gain * cotton_price
-
-trial$Yield_tdif <- trial$Yield_pred - trial$Yield_ref
-trial$Net_dif <- trial$Yield_tdif * cotton_price
-
-trial <- mutate(trial, Yield_gain_NR = Yield_gain_NR - nitrogen_ratio * NR_opt)
 
 
 

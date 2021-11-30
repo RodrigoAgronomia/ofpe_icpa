@@ -20,9 +20,11 @@ st_interpolate = function(x){
   return(x)
 }
 
-cotton_price = 1.25
-nitrogen_cost = 1.0
-nitrogen_ratio = nitrogen_cost/cotton_price
+corn_price = 0.160
+nitrogen_cost = 0.88
+seed_cost = .0035
+seed_ratio = seed_cost/corn_price
+nitrogen_ratio = nitrogen_cost/corn_price
 
 set.seed(12345)
 
@@ -35,66 +37,32 @@ gridded(trial_grd) <- TRUE
 m <- vgm(psill = 1, model = "Gau", range = 100, nugget = 0.1)
 g.dummy <- gstat(formula = z ~ 1, dummy = TRUE, beta = 0, model = m, nmax = 10)
 
-sq_rate <- 100
-sq_yield <- 1000
 
 rst_sim <- predict(g.dummy, trial_grd, nsim = 2)
 rst_sim <- scale(stack(rst_sim))
-rst_b1g <- nitrogen_ratio
-rst_b2g <- -0.05
-rst_b1 <- rst_b1g + 2 * rst_sim[[2]]
-rst_optr = sq_rate -0.5 * (rst_b1 - nitrogen_ratio) / rst_b2g
-hist(rst_optr[])
+rst_b0 <- 10000 + 1000 * rst_sim[[1]]
+rst_b1g <- 20 + nitrogen_ratio
+rst_b2g <- -0.1
+rst_b1 <- rst_b1g + 3 * rst_sim[[2]]
+rst_optr = -0.5 * (rst_b1 - nitrogen_ratio) / rst_b2g
+rst_err <- 100 * rnorm(ncell(rst_sim))
 
-rst_b0 <- 1000 + 100 * rst_sim[[1]]
-rst_b0 = 1000 - 100 * rst_sim[[1]] - rst_b1 * sq_rate - rst_b2g * sq_rate**2
+# rst_optrd <- disaggregate(aggregate(rst_optr, 2), 2)
+# 
+# plot(rst_optr)
+# plot(rst_optrd)
+# 
+# plot(rst_optrd, rst_optr, asp = 1)
+# cor(rst_optrd[], rst_optr[])
+# rmse(rst_optrd[], rst_optr[])
 
-nrate = seq(0,200)
-ynr = rst_b1g * (nrate - sq_rate) + rst_b2g * (nrate - sq_rate)**2
-plot(ynr ~ nrate, ylim = c(-1000, 1000))
+inp_rate = 100 + 50 * trial$size15_p100
+# inp_rate[is.na(inp_rate)] = 100
+rst_yield =  rst_b0 + rst_b1 * inp_rate + rst_b2g * inp_rate**2
 
-ynr0 =  min(rst_b1[]) * (nrate - sq_rate) + rst_b2g * (nrate - sq_rate)**2
-lines(ynr0 ~ nrate)
-
-ynr0 =  max(rst_b1[]) * (nrate - sq_rate) + rst_b2g * (nrate - sq_rate)**2
-lines(ynr0 ~ nrate)
-
-
-inp_rate = sq_rate + 25 * trial$size15_p100
-
-rst_b0 = rst_yield_ref - rst_b1 * sq_rate - rst_b2g * sq_rate**2
-
-rst_yield_ref =  rst_b0 + rst_b1 * sq_rate + rst_b2g * sq_rate**2
-rst_yield_obs =  rst_b0 + rst_b1 * inp_rate + rst_b2g * inp_rate**2
-rst_yield_opt =  rst_b0 + rst_b1 * rst_optr + rst_b2g * rst_optr**2
-
-
-rst_net_ref = rst_yield_ref * cotton_price - sq_rate * nitrogen_cost
-rst_net_obs = rst_yield_obs * cotton_price - inp_rate * nitrogen_cost 
-rst_net_opt = rst_yield_opt * cotton_price - rst_optr * nitrogen_cost 
-
-
-hist(rst_optr)
-hist(rst_yield_ref)
-plot(rst_yield_ref)
-
-max_net_profit = (rst_net_opt - rst_net_ref)
-rst_trial_loss = (rst_net_obs - rst_net_ref)
-
-hist(max_net_profit[])
-hist(rst_trial_loss[])
-
-mean(max_net_profit[])
-mean(rst_trial_loss[])
-
-
-plot(rst_net_opt - rst_net_ref)
-plot(rst_net_opt - rst_net_obs)
-plot(rst_net_obs - rst_net_ref)
-
-  
-
-
+plot(rst_yield)
+plot(inp_rate, rst_yield)
+plot(inp_rate)
 
 
 grdf = stack(inp_rate, rst_yield, trial$size15_rep)
@@ -198,9 +166,9 @@ rst_yield_ref =  rst_b0 + rst_b1 * 100 + rst_b2g * 100**2
 rst_yield_pred = rst_b0 + rst_b1 * rst_optrp + rst_b2g * rst_optrp**2
 rst_yield_opt =  rst_b0 + rst_b1 * rst_optr + rst_b2g * rst_optr**2
 
-rst_net_ref = rst_yield_ref * cotton_price - 100 * nitrogen_cost
-rst_net_pred = rst_yield_pred * cotton_price - rst_optrp * nitrogen_cost 
-rst_net_opt = rst_yield_opt * cotton_price - rst_optr * nitrogen_cost 
+rst_net_ref = rst_yield_ref * corn_price - 100 * nitrogen_cost
+rst_net_pred = rst_yield_pred * corn_price - rst_optrp * nitrogen_cost 
+rst_net_opt = rst_yield_opt * corn_price - rst_optr * nitrogen_cost 
 
 rst_net_pred_dif = rst_net_pred - rst_net_ref
 rst_net_opt_dif = rst_net_opt - rst_net_ref
@@ -209,10 +177,10 @@ mean(rst_net_pred_dif[])
 mean(rst_net_opt_dif[])
 
 
-rst_net_rev <- rst_yield_gain * cotton_price
+rst_net_rev <- rst_yield_gain * corn_price
 
 trial$Yield_tdif <- trial$Yield_pred - trial$Yield_ref
-trial$Net_dif <- trial$Yield_tdif * cotton_price
+trial$Net_dif <- trial$Yield_tdif * corn_price
 
 trial <- mutate(trial, Yield_gain_NR = Yield_gain_NR - nitrogen_ratio * NR_opt)
 
